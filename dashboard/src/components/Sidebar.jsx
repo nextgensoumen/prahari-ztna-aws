@@ -1,18 +1,19 @@
 import React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { logout } from '../lib/auth'
+import { Hexagon, Search, Lock, FileText, Rocket, User, LogOut } from 'lucide-react'
 
 const adminNav = [
-  { to: '/dashboard',  icon: '⬡', label: 'Overview' },
-  { to: '/findings',   icon: '🔎', label: 'Findings Feed' },
-  { to: '/sessions',   icon: '🔐', label: 'Sessions' },
-  { to: '/policies',   icon: '📋', label: 'Policy Queue' },
-  { to: '/pipeline',   icon: '🚀', label: 'Pipeline' },
+  { to: '/dashboard',  icon: Hexagon, label: 'Overview' },
+  { to: '/findings',   icon: Search,  label: 'Findings Feed' },
+  { to: '/sessions',   icon: Lock,    label: 'Sessions' },
+  { to: '/policies',   icon: FileText,label: 'Policy Queue' },
+  { to: '/pipeline',   icon: Rocket,  label: 'Pipeline' },
 ]
 
 const userNav = [
-  { to: '/dashboard', icon: '⬡', label: 'My Dashboard' },
-  { to: '/me',        icon: '👤', label: 'My Trust Score' },
+  { to: '/dashboard', icon: Hexagon, label: 'My Dashboard' },
+  { to: '/me',        icon: User,    label: 'My Trust Score' },
 ]
 
 export default function Sidebar({ user }) {
@@ -27,35 +28,26 @@ export default function Sidebar({ user }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <div className="wordmark">प Prahari</div>
-        <div className="tagline">Zero Trust Platform</div>
+        <div className="mark">प</div>
+        <div className="wordmark">Prahari</div>
       </div>
 
       <nav className="sidebar-nav">
-        <span className="nav-section-label">Navigation</span>
-        {nav.map(item => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/dashboard'}
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            <span className="icon">{item.icon}</span>
-            {item.label}
-          </NavLink>
-        ))}
+        {nav.map(item => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === '/dashboard'}
+              className={({ isActive }) => `nav-item ripple${isActive ? ' active' : ''}`}
+            >
+              <span className="icon"><Icon size={18} /></span>
+              {item.label}
+            </NavLink>
+          )
+        })}
       </nav>
-
-      <div className="sidebar-footer">
-        <div className="user-chip">
-          <div className="user-avatar">{initial}</div>
-          <div className="user-info">
-            <div className="email">{user?.email || 'Unknown'}</div>
-            <span className="role-badge">{user?.isAdmin ? 'Admin' : 'User'}</span>
-          </div>
-          <button className="logout-btn" onClick={handleLogout} title="Sign out">⏻</button>
-        </div>
-      </div>
     </aside>
   )
 }

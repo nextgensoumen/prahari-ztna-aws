@@ -1,29 +1,24 @@
-# Session 04 — Automated Response: Step Functions Playbooks
+# Session 04 — Dashboard, Automated Response, Infrastructure Hardening, and UI Overhaul
 Date: 2026-07-25
-Module/phase touched: automated-response, services/response-playbooks
+Module/phase touched: dashboard-hosting, automated-response, frontend UI, infrastructure fixes
 What changed:
-- Created the identity lookup Lambda (`identity_lookup.py`): resolves an IAM principal ARN to a Cognito username via the trust-scores DynamoDB table. Returns `skip_revocation=true` for headless service roles with no Cognito identity.
-- Created the response ASL (`response.asl.json`) with two paths:
-  - FullResponse (parallel): Branch A revokes Cognito session (`AdminUserGlobalSignOut`), Branch B attaches `AWSDenyAll` and tags the role `prahari:quarantined = true`.
-  - QuarantineOnly: for headless roles — skips session revocation, still quarantines the IAM role.
-- Both paths emit custom events (`SessionRevoked`, `RoleQuarantined`) back to `prahari-signal-bus` so the dashboard can surface them.
-- Created the Step Functions state machine with CloudWatch logging at ERROR level.
-- Created two EventBridge trigger rules: (1) `RiskScoreUpdated[is_high_risk=true]` on the prahari-signal-bus, (2) GuardDuty findings with severity >= 7 on the default bus (fast-path bypassing risk engine for very high confidence signals).
-- Added `trust_scores_table_arn` output to the `ztna-broker` module to satisfy the new input dependency.
+- **Automated Response**: Built Step Functions state machine (`response.asl.json`) that triggers on `RiskScoreUpdated > 80`. It runs a parallel execution that blocks Cognito access and attaches an `AWSDenyAll` SCP-like policy to IAM roles. Fixed an initial bug where `States.JsonToString` was invalidly used.
+- **Dashboard Hosting**: Provisioned CloudFront + S3 static hosting, along with API Gateway and a Lambda backend (`dashboard-api`) to serve finding/session telemetry from DynamoDB.
+- **Infrastructure Hardening (P0/P1/P2 Fixes)**: 
+  - Enabled S3 state backend.
+  - Attached ACM certificates to the ZTNA Verified Access endpoint.
+  - Enabled DynamoDB Point-in-Time Recovery (PITR).
+  - Enforced reserved concurrency (10 for `normalizer`, 5 for `risk-engine`) to protect against event storms.
+  - Injected strict CloudFront Security Headers (CSP, HSTS).
+- **Dashboard UI Full Redesign**: Re-wrote `dashboard/src/index.css` using pure CSS to implement a premium Glassmorphism aesthetic. Integrated `lucide-react` for high-quality SVG icons. Added dynamic entry animations (`slideUpFade`), micro-interactions (hover scaling, deep shadows), a top navigation header with Search and Date filters, and a new loading skeleton. Tested and visually verified via a headless browser agent.
 Why (the reasoning, not just the diff):
-- Parallel branches mean session revocation and IAM quarantine happen simultaneously — total response time is bounded by the slower branch, not the sum of both.
-- `AWSDenyAll` attachment is reversible: a human detaches the policy to restore access, which is a deliberate human-in-the-loop gate for recovery. This aligns with the explainability constraint — no automated de-quarantine.
-- The fast-path GuardDuty rule (severity >= 7) bypasses the risk engine for undeniably high-confidence signals. A GuardDuty 9.0 severity finding shouldn't wait for the risk engine to query DynamoDB.
-- The IAM `AttachRolePolicy` is conditioned on `iam:PolicyARN = AWSDenyAll` only — the state machine role cannot attach any other policy, eliminating the possibility of privilege escalation via the response mechanism itself.
+- The infrastructure fixes were required to make the project truly production-ready (solving concurrency risks, state management, and HTTPS termination issues).
+- The dashboard redesign was executed because the original UI was functionally complete but visually unpolished. The new design strictly follows modern aesthetics (dark mode, glassmorphism) without bloated dependencies, adhering to the requirement for a "premium" feel.
 Files touched:
-- `infra/modules/automated-response/main.tf`
-- `infra/modules/automated-response/lambda.tf`
-- `infra/modules/automated-response/playbooks.tf`
-- `infra/modules/automated-response/variables.tf`
-- `infra/modules/automated-response/outputs.tf`
-- `infra/modules/automated-response/step-functions/response.asl.json`
-- `services/response-playbooks/src/identity_lookup.py`
-- `infra/modules/ztna-broker/outputs.tf` (added trust_scores_table_arn)
-- `infra/envs/dev/main.tf` (added automated_response module block and output)
+- `infra/modules/automated-response/*`
+- `infra/modules/dashboard-hosting/*`
+- `dashboard/src/*` (Complete React UI rewrite)
+- `infra/envs/dev/main.tf` and `infra/envs/dev/terraform.tfvars.example`
+- `README.md`, `CHANGELOG.md`, `SECURITY.md`, `UPGRADES_NEEDED.md`
 Open questions / next step:
-- Step 7: `dashboard-hosting` module + React app + `dashboard-api` service. This is the final major module and will wire Cognito auth directly to the dashboard.
+- The final steps on the roadmap: Configuring Lambda Dead-Letter Queues (DLQs), CloudWatch Composite Alarms, API Gateway WAF, and Cognito MFA enforcement.

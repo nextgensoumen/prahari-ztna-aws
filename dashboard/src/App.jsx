@@ -6,15 +6,16 @@ import {
   AdminDashboard, UserDashboard,
   FindingsPage, SessionsPage, PoliciesPage, PipelinePage, MePage
 } from './pages/Pages'
+import { Search, Bell, Settings, ChevronDown, LogOut } from 'lucide-react'
 
 function LoginPage() {
   return (
     <div className="login-page">
       <div className="bg-grid" />
-      <div className="login-card" style={{ position: 'relative', zIndex: 1 }}>
+      <div className="login-card animate-slide-up" style={{ position: 'relative', zIndex: 1 }}>
         <div className="login-logo">प Prahari</div>
         <div className="login-tagline">Zero Trust Access & Governance Platform</div>
-        <button className="login-btn" onClick={initiateLogin}>
+        <button className="login-btn ripple" onClick={initiateLogin}>
           Sign in with SSO →
         </button>
         <div className="login-note">
@@ -48,13 +49,37 @@ function CallbackPage({ onAuth }) {
   return <div className="spinner" style={{ marginTop: '40vh' }} />
 }
 
+function TopHeader({ user }) {
+  const initial = user?.email?.[0]?.toUpperCase() || '?'
+  return (
+    <header className="top-header animate-slide-up">
+      <div className="search-bar">
+        <Search size={16} color="var(--text-muted)" />
+        <input type="text" placeholder="Search principals, findings..." />
+      </div>
+      <div className="header-actions">
+        <button className="icon-btn ripple"><Bell size={18} /></button>
+        <button className="icon-btn ripple"><Settings size={18} /></button>
+        <div className="profile-dropdown">
+          <button className="profile-btn ripple" onClick={() => logout()}>
+            <div className="profile-avatar">{initial}</div>
+            <span className="profile-name">{user?.email?.split('@')[0] || 'User'}</span>
+            <LogOut size={14} style={{marginLeft: 4, color: 'var(--text-muted)'}}/>
+          </button>
+        </div>
+      </div>
+    </header>
+  )
+}
+
 function ProtectedLayout({ user }) {
   if (!user) return <Navigate to="/" replace />
 
   return (
     <div className="app-shell">
       <Sidebar user={user} />
-      <main className="main-content">
+      <main className="main-content" style={{ position: 'relative' }}>
+        <TopHeader user={user} />
         <Routes>
           <Route path="/dashboard" element={user.isAdmin
             ? <AdminDashboard />
