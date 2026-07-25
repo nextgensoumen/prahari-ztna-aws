@@ -33,6 +33,21 @@ module "signal_bus" {
   source = "../../modules/signal-bus"
 }
 
+module "ztna_broker" {
+  source = "../../modules/ztna-broker"
+
+  signal_bus_arn    = module.signal_bus.signal_bus_arn
+  events_table_name = module.signal_bus.events_table_name
+
+  # Keep Verified Access OFF by default to avoid per-hour billing
+  # Set to true only when running a live demo, then run 'terraform destroy' after
+  deploy_verified_access = false
+  risk_score_threshold   = 50
+}
+
+# ----------------------------------------
+# Outputs
+# ----------------------------------------
 output "supply_chain_role_arn" {
   value       = module.supply_chain.github_actions_role_arn
   description = "Add this ARN to GitHub Secrets as AWS_ROLE_ARN"
@@ -51,4 +66,19 @@ output "signal_bus_arn" {
 output "events_table_name" {
   value       = module.signal_bus.events_table_name
   description = "DynamoDB table name for normalized events"
+}
+
+output "cognito_user_pool_id" {
+  value       = module.ztna_broker.cognito_user_pool_id
+  description = "Cognito User Pool ID (one identity plane for ZTNA + dashboard)"
+}
+
+output "cognito_client_id" {
+  value       = module.ztna_broker.cognito_client_id
+  description = "Cognito App Client ID"
+}
+
+output "trust_scores_table_name" {
+  value       = module.ztna_broker.trust_scores_table_name
+  description = "DynamoDB table for principal trust scores"
 }
