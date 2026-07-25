@@ -1,1 +1,48 @@
-# Placeholder for dashboard-ci workflow
+name: Dashboard CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'dashboard/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Dashboard
+        working-directory: dashboard
+        run: |
+          npm ci
+          # Provide placeholders or secrets for production build
+          echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" >> .env
+          echo "VITE_COGNITO_USER_POOL_ID=${{ secrets.VITE_COGNITO_USER_POOL_ID }}" >> .env
+          echo "VITE_COGNITO_CLIENT_ID=${{ secrets.VITE_COGNITO_CLIENT_ID }}" >> .env
+          echo "VITE_COGNITO_DOMAIN=${{ secrets.VITE_COGNITO_DOMAIN }}" >> .env
+          echo "VITE_REDIRECT_URI=${{ secrets.VITE_REDIRECT_URI }}" >> .env
+          echo "VITE_LOGOUT_URI=${{ secrets.VITE_LOGOUT_URI }}" >> .env
+          npm run build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy to S3
+        working-directory: dashboard
+        run: aws s3 sync dist/ s3://${{ secrets.DASHBOARD_BUCKET_NAME }}/ --delete
+
+      - name: Invalidate CloudFront
+        run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} --paths "/*"

@@ -54,15 +54,15 @@ resource "aws_verifiedaccess_group" "main" {
 }
 
 resource "aws_verifiedaccess_endpoint" "app" {
-  count                        = var.deploy_verified_access ? 1 : 0
+  count                        = var.deploy_verified_access && var.acm_certificate_arn != "" ? 1 : 0
   application_domain           = replace(var.app_endpoint_url, "https://", "")
   attachment_type              = "vpc"
   description                  = "Prahari protected application endpoint"
-  domain_certificate_arn       = null  # Provide your ACM cert ARN here
+  domain_certificate_arn       = var.acm_certificate_arn
   endpoint_domain_prefix       = "prahari-app"
   endpoint_type                = "load-balancer"
   verifiedaccess_group_id      = aws_verifiedaccess_group.main[0].id
-  application_domain_certificate_arn = null  # Provide your ACM cert ARN here
+  application_domain_certificate_arn = var.acm_certificate_arn
 
   lifecycle {
     ignore_changes = [domain_certificate_arn, application_domain_certificate_arn]

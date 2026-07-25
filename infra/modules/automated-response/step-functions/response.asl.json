@@ -14,7 +14,7 @@
       "ResultPath": "$.identity",
       "ResultSelector": {
         "skip_revocation.$": "$.Payload.skip_revocation",
-        "cognito_username.$": "States.JsonToString($.Payload)"
+        "cognito_username.$": "$.Payload.cognito_username"
       },
       "Next": "RouteByPrincipalType"
     },

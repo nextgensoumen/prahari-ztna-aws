@@ -25,3 +25,9 @@ variable "events_table_name" {
   description = "Name of the prahari-platform-events DynamoDB table (from signal-bus module output)"
   type        = string
 }
+
+variable "acm_certificate_arn" {
+  description = "ARN of the ACM certificate in us-east-1 for the Verified Access endpoint"
+  type        = string
+  default     = ""
+}

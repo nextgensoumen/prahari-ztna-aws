@@ -1,1 +1,35 @@
-# Placeholder for infra-plan workflow
+name: Infrastructure Plan
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+
+      - name: Terraform Init
+        working-directory: infra/envs/dev
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: infra/envs/dev
+        run: terraform plan -no-color

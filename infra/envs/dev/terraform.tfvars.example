@@ -1,0 +1,10 @@
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control!
+
+# (Optional) Provide a GitHub token to allow CodeBuild to clone the repo 
+# github_token = "ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# (Optional) Only enable Verified Access for a live demo to avoid hourly charges
+# deploy_verified_access = true
+# acm_certificate_arn    = "arn:aws:acm:us-east-1:123456789012:certificate/uuid"
+# app_endpoint_url       = "https://app.example.com"
