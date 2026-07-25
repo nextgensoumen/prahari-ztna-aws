@@ -106,6 +106,7 @@ resource "aws_lambda_function" "risk_engine" {
   runtime          = "python3.12"
   timeout          = 30
   source_code_hash = data.archive_file.risk_engine_zip.output_base64sha256
+  reserved_concurrent_executions = 20
 
   environment {
     variables = {

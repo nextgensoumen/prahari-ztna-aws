@@ -65,6 +65,7 @@ resource "aws_lambda_function" "normalizer" {
   runtime          = "python3.12"
   timeout          = 15
   source_code_hash = data.archive_file.normalizer_zip.output_base64sha256
+  reserved_concurrent_executions = 20
 
   environment {
     variables = {
