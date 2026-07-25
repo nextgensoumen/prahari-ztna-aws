@@ -122,8 +122,9 @@ resource "aws_dynamodb_table" "events" {
 # CLOUDTRAIL S3 BUCKET
 # ---------------------------------------------------------------------------------------------------------------------
 resource "aws_s3_bucket" "cloudtrail" {
-  bucket        = "${local.name_prefix}-trail-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.name}"
-  force_destroy = true
+  bucket              = "${local.name_prefix}-trail-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.name}"
+  force_destroy       = false
+  object_lock_enabled = true
 }
 
 resource "aws_s3_bucket_versioning" "cloudtrail" {

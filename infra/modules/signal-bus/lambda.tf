@@ -50,6 +50,16 @@ data "aws_iam_policy_document" "normalizer_policy" {
     actions = ["sqs:SendMessage"]
     resources = [aws_sqs_queue.normalizer_dlq.arn]
   }
+
+  statement {
+    sid    = "XRayTracing"
+    effect = "Allow"
+    actions = [
+      "xray:PutTraceSegments",
+      "xray:PutTelemetryRecords"
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "normalizer_policy" {
@@ -70,9 +80,14 @@ resource "aws_lambda_function" "normalizer" {
   role             = aws_iam_role.normalizer_role.arn
   handler          = "main.lambda_handler"
   runtime          = "python3.12"
+  architectures    = ["arm64"]
   timeout          = 15
   source_code_hash = data.archive_file.normalizer_zip.output_base64sha256
   reserved_concurrent_executions = 20
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {

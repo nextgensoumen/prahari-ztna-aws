@@ -41,6 +41,10 @@ resource "aws_cognito_user_pool" "main" {
     allow_admin_create_user_only = true
   }
 
+  user_pool_add_ons {
+    advanced_security_mode = "ENFORCED"
+  }
+
   schema {
     name                     = "email"
     attribute_data_type      = "String"

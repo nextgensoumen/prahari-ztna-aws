@@ -91,6 +91,16 @@ data "aws_iam_policy_document" "risk_engine_permissions" {
     actions = ["sqs:SendMessage"]
     resources = [aws_sqs_queue.risk_engine_dlq.arn]
   }
+
+  statement {
+    sid    = "XRayTracing"
+    effect = "Allow"
+    actions = [
+      "xray:PutTraceSegments",
+      "xray:PutTelemetryRecords"
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "risk_engine" {
@@ -111,9 +121,14 @@ resource "aws_lambda_function" "risk_engine" {
   role             = aws_iam_role.risk_engine.arn
   handler          = "main.lambda_handler"
   runtime          = "python3.12"
+  architectures    = ["arm64"]
   timeout          = 30
   source_code_hash = data.archive_file.risk_engine_zip.output_base64sha256
-  reserved_concurrent_executions = 20
+  reserved_concurrent_executions = 5
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -121,6 +136,7 @@ resource "aws_lambda_function" "risk_engine" {
       SCORES_TABLE_NAME = aws_dynamodb_table.trust_scores.name
       SIGNAL_BUS_NAME   = var.signal_bus_arn
       RISK_THRESHOLD    = tostring(var.risk_score_threshold)
+      SCORE_DECAY_RATE  = "5"
     }
   }
 
@@ -165,7 +181,11 @@ resource "aws_cloudwatch_event_rule" "risk_engine_trigger" {
   event_bus_name = var.signal_bus_arn
 
   event_pattern = jsonencode({
-    source = [{ "prefix": "" }]
+    source = [
+      "aws.guardduty",
+      "aws.securityhub",
+      "aws.cloudtrail"
+    ]
   })
 }
 

@@ -15,13 +15,14 @@ EVENTS_TABLE_NAME  = os.environ['EVENTS_TABLE_NAME']
 SCORES_TABLE_NAME  = os.environ['SCORES_TABLE_NAME']
 SIGNAL_BUS_NAME    = os.environ['SIGNAL_BUS_NAME']
 RISK_THRESHOLD     = int(os.environ.get('RISK_THRESHOLD', '50'))
+SCORE_DECAY_RATE   = int(os.environ.get('SCORE_DECAY_RATE', '5'))  # points/hour
 
 events_table = dynamodb.Table(EVENTS_TABLE_NAME)
 scores_table = dynamodb.Table(SCORES_TABLE_NAME)
 
 # ---------------------------------------------------------------------------
 # DETERMINISTIC WEIGHTED RULE TABLE
-# Points are additive. Score range: 0-100, capped.
+# Points are additive. Score range: 0-100, clamped.
 # Positive = bad signal (raises risk). Negative = trust signal (lowers risk).
 # ---------------------------------------------------------------------------
 RULES = [
@@ -79,6 +80,25 @@ RULES = [
             evt.get("severity") in ("high", "critical")
         )
     },
+    {
+        "id":          "iam_user_created",
+        "description": "Unexpected IAM User creation (shadow admin risk)",
+        "points":      35,
+        "match": lambda evt: (
+            evt.get("source_module") == "cloudtrail" and
+            "CreateUser" in evt.get("title", "")
+        )
+    },
+    {
+        "id":          "root_account_login",
+        "description": "Root account console login — critical zero-trust violation",
+        "points":      60,
+        "match": lambda evt: (
+            evt.get("source_module") == "cloudtrail" and
+            "ConsoleLogin" in evt.get("title", "") and
+            ":root" in evt.get("principal", "")
+        )
+    },
 ]
 
 TRUST_SIGNALS = [
@@ -86,7 +106,6 @@ TRUST_SIGNALS = [
         "id":          "mfa_used",
         "description": "MFA was used at login (deducted from score)",
         "points":      -20,
-        # This signal comes from a Prahari custom event emitted by the broker
         "match": lambda evt: (
             evt.get("source_module") == "prahari" and
             evt.get("title", "").startswith("MFA:Login")
@@ -97,10 +116,55 @@ TRUST_SIGNALS = [
 ALL_RULES = RULES + TRUST_SIGNALS
 
 
-def compute_score(principal: str, recent_events: list) -> tuple[int, list]:
-    """Apply the rule table against a list of recent events for a principal.
-    Returns (score, list of triggered rule IDs)."""
-    score = 0
+def get_decayed_base_score(principal: str) -> int:
+    """
+    Fetch the existing trust score and apply time-based decay.
+    Decay rate: SCORE_DECAY_RATE points per hour since last update.
+    This prevents users from being stuck at maximum risk indefinitely
+    and makes the trust model more accurate and dynamic.
+    """
+    try:
+        resp = scores_table.get_item(Key={"principal": principal})
+        item = resp.get("Item")
+        if not item:
+            return 0
+
+        stored_score = int(item.get("score", 0))
+        last_updated = item.get("timestamp", "")
+
+        if not last_updated:
+            return stored_score
+
+        last_time = datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        elapsed_hours = (now - last_time).total_seconds() / 3600.0
+
+        # Apply linear decay: reduce score by SCORE_DECAY_RATE per hour
+        decayed_score = stored_score - int(elapsed_hours * SCORE_DECAY_RATE)
+        decayed_score = max(0, decayed_score)
+
+        if decayed_score != stored_score:
+            logger.info(
+                f"Score decay applied for {principal}: "
+                f"{stored_score} -> {decayed_score} "
+                f"(elapsed: {elapsed_hours:.1f}h, rate: {SCORE_DECAY_RATE}/h)"
+            )
+
+        return decayed_score
+
+    except Exception as e:
+        logger.warning(f"Could not fetch/decay existing score for {principal}: {e}")
+        return 0
+
+
+def compute_score(principal: str, recent_events: list) -> tuple:
+    """
+    Apply the rule table against recent events for a principal.
+    Starts from decayed base score rather than zero.
+    Returns (score, list of triggered rule IDs).
+    """
+    base_score = get_decayed_base_score(principal)
+    delta = 0
     triggered = []
 
     for evt in recent_events:
@@ -108,9 +172,10 @@ def compute_score(principal: str, recent_events: list) -> tuple[int, list]:
             continue
         for rule in ALL_RULES:
             if rule["match"](evt):
-                score += rule["points"]
+                delta += rule["points"]
                 triggered.append(rule["id"])
 
+    score = base_score + delta
     score = max(0, min(100, score))   # clamp to [0, 100]
     return score, triggered
 
@@ -142,12 +207,12 @@ def emit_score_updated_event(principal: str, score: int, triggered: list):
                 "Source":       "prahari.risk-engine",
                 "DetailType":   "RiskScoreUpdated",
                 "Detail": json.dumps({
-                    "principal":     principal,
-                    "score":         score,
-                    "threshold":     RISK_THRESHOLD,
-                    "is_high_risk":  score >= RISK_THRESHOLD,
+                    "principal":       principal,
+                    "score":           score,
+                    "threshold":       RISK_THRESHOLD,
+                    "is_high_risk":    score >= RISK_THRESHOLD,
                     "triggered_rules": triggered,
-                    "timestamp":     datetime.now(timezone.utc).isoformat()
+                    "timestamp":       datetime.now(timezone.utc).isoformat()
                 })
             }
         ]
@@ -156,41 +221,46 @@ def emit_score_updated_event(principal: str, score: int, triggered: list):
 
 def lambda_handler(event, context):
     """
-    Triggered by EventBridge on prahari-signal-bus for every normalized event.
-    Recalculates the trust score for the principal in that event.
+    Triggered by EventBridge on prahari-signal-bus for GuardDuty, Security Hub,
+    and CloudTrail events only. Recalculates the trust score with decay applied.
     """
-    logger.info(f"Risk engine triggered by event from {event.get('source')}")
+    event_id = event.get("id", "unknown")
+    logger.info(f"Risk engine triggered | event_id={event_id} source={event.get('source')}")
 
     detail = event.get("detail", {})
-    principal = detail.get("principal") or event.get("detail", {}).get("principal", "")
+    principal = detail.get("principal") or ""
 
-    if not principal or principal in ("unknown", "system"):
-        logger.info("No actionable principal in event, skipping.")
-        return {"status": "skipped"}
+    if not principal or principal in ("unknown", "system", ""):
+        logger.info(f"No actionable principal in event {event_id}, skipping.")
+        return {"status": "skipped", "event_id": event_id}
 
-    # Fetch recent events for this principal
+    # Fetch recent events and compute score with decay
     recent_events = get_recent_events(principal)
     score, triggered = compute_score(principal, recent_events)
 
-    logger.info(f"Computed risk score for {principal}: {score} (triggered: {triggered})")
+    logger.info(
+        f"Trust score computed | principal={principal} score={score} "
+        f"threshold={RISK_THRESHOLD} triggered={triggered}"
+    )
 
     # Persist score with 24h TTL
     ttl = int(datetime.now(timezone.utc).timestamp()) + (24 * 60 * 60)
     scores_table.put_item(Item={
-        "principal":      principal,
-        "score":          Decimal(str(score)),
-        "threshold":      Decimal(str(RISK_THRESHOLD)),
-        "is_high_risk":   score >= RISK_THRESHOLD,
+        "principal":       principal,
+        "score":           Decimal(str(score)),
+        "threshold":       Decimal(str(RISK_THRESHOLD)),
+        "is_high_risk":    score >= RISK_THRESHOLD,
         "triggered_rules": triggered,
-        "timestamp":      datetime.now(timezone.utc).isoformat(),
-        "ttl":            ttl
+        "timestamp":       datetime.now(timezone.utc).isoformat(),
+        "ttl":             ttl
     })
 
-    # Emit RiskScoreUpdated custom event for automated-response to consume
+    # Emit RiskScoreUpdated — consumed by automated-response module
     emit_score_updated_event(principal, score, triggered)
 
     return {
         "status":       "success",
+        "event_id":     event_id,
         "principal":    principal,
         "score":        score,
         "is_high_risk": score >= RISK_THRESHOLD
