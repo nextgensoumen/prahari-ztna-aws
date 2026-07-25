@@ -29,6 +29,10 @@ module "least_priv_autopilot" {
   github_repo = "nextgensoumen/prahari-ztna-aws"
 }
 
+module "signal_bus" {
+  source = "../../modules/signal-bus"
+}
+
 output "supply_chain_role_arn" {
   value       = module.supply_chain.github_actions_role_arn
   description = "Add this ARN to GitHub Secrets as AWS_ROLE_ARN"
@@ -37,4 +41,14 @@ output "supply_chain_role_arn" {
 output "autopilot_state_machine_arn" {
   value       = module.least_priv_autopilot.state_machine_arn
   description = "ARN of the Autopilot State Machine"
+}
+
+output "signal_bus_arn" {
+  value       = module.signal_bus.signal_bus_arn
+  description = "ARN of the custom Prahari EventBridge bus"
+}
+
+output "events_table_name" {
+  value       = module.signal_bus.events_table_name
+  description = "DynamoDB table name for normalized events"
 }
