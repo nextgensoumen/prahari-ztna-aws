@@ -1,3 +1,4 @@
+# We need to add events_table_arn output to signal-bus module
 output "signal_bus_arn" {
   description = "ARN of the custom EventBridge bus for Prahari events"
   value       = aws_cloudwatch_event_bus.prahari.arn
@@ -6,6 +7,11 @@ output "signal_bus_arn" {
 output "events_table_name" {
   description = "Name of the DynamoDB table storing normalized events"
   value       = aws_dynamodb_table.events.name
+}
+
+output "events_table_arn" {
+  description = "ARN of the DynamoDB table storing normalized events"
+  value       = aws_dynamodb_table.events.arn
 }
 
 output "kms_key_arn" {

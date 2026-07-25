@@ -39,8 +39,6 @@ module "ztna_broker" {
   signal_bus_arn    = module.signal_bus.signal_bus_arn
   events_table_name = module.signal_bus.events_table_name
 
-  # Keep Verified Access OFF by default to avoid per-hour billing
-  # Set to true only when running a live demo, then run 'terraform destroy' after
   deploy_verified_access = false
   risk_score_threshold   = 50
 }
@@ -55,45 +53,51 @@ module "automated_response" {
   trust_scores_table_arn  = module.ztna_broker.trust_scores_table_arn
 }
 
-# ----------------------------------------
-# Outputs
-# ----------------------------------------
+module "dashboard_hosting" {
+  source = "../../modules/dashboard-hosting"
+
+  cognito_user_pool_id       = module.ztna_broker.cognito_user_pool_id
+  cognito_user_pool_arn      = module.ztna_broker.cognito_user_pool_arn
+  events_table_name          = module.signal_bus.events_table_name
+  events_table_arn           = module.signal_bus.events_table_arn
+  trust_scores_table_name    = module.ztna_broker.trust_scores_table_name
+  trust_scores_table_arn     = module.ztna_broker.trust_scores_table_arn
+  response_state_machine_arn = module.automated_response.response_state_machine_arn
+  github_repo                = "nextgensoumen/prahari-ztna-aws"
+}
+
+# ─── Outputs ──────────────────────────────────────────────────────────────────
 output "supply_chain_role_arn" {
-  value       = module.supply_chain.github_actions_role_arn
-  description = "Add this ARN to GitHub Secrets as AWS_ROLE_ARN"
+  value = module.supply_chain.github_actions_role_arn
 }
-
 output "autopilot_state_machine_arn" {
-  value       = module.least_priv_autopilot.state_machine_arn
-  description = "ARN of the Autopilot State Machine"
+  value = module.least_priv_autopilot.state_machine_arn
 }
-
 output "signal_bus_arn" {
-  value       = module.signal_bus.signal_bus_arn
-  description = "ARN of the custom Prahari EventBridge bus"
+  value = module.signal_bus.signal_bus_arn
 }
-
 output "events_table_name" {
-  value       = module.signal_bus.events_table_name
-  description = "DynamoDB table name for normalized events"
+  value = module.signal_bus.events_table_name
 }
-
 output "cognito_user_pool_id" {
-  value       = module.ztna_broker.cognito_user_pool_id
-  description = "Cognito User Pool ID (one identity plane for ZTNA + dashboard)"
+  value = module.ztna_broker.cognito_user_pool_id
 }
-
 output "cognito_client_id" {
-  value       = module.ztna_broker.cognito_client_id
-  description = "Cognito App Client ID"
+  value = module.ztna_broker.cognito_client_id
 }
-
 output "trust_scores_table_name" {
-  value       = module.ztna_broker.trust_scores_table_name
-  description = "DynamoDB table for principal trust scores"
+  value = module.ztna_broker.trust_scores_table_name
 }
-
 output "response_state_machine_arn" {
-  value       = module.automated_response.response_state_machine_arn
-  description = "ARN of the automated response Step Functions state machine"
+  value = module.automated_response.response_state_machine_arn
+}
+output "dashboard_url" {
+  value       = "https://${module.dashboard_hosting.cloudfront_domain}"
+  description = "Prahari Dashboard — visit this URL after deploy"
+}
+output "api_gateway_url" {
+  value = module.dashboard_hosting.api_gateway_url
+}
+output "cognito_dashboard_client_id" {
+  value = module.dashboard_hosting.cognito_dashboard_client_id
 }
