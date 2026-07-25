@@ -112,6 +112,10 @@ resource "aws_dynamodb_table" "events" {
     enabled     = true
     kms_key_arn = aws_kms_key.main.arn
   }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
