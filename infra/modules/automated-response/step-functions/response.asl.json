@@ -1,0 +1,191 @@
+{
+  "Comment": "Prahari Automated Response Playbook: Session revocation and IAM quarantine on high-risk events",
+  "StartAt": "CheckPrincipalType",
+  "States": {
+    "CheckPrincipalType": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${IdentityLookupFunctionArn}",
+        "Payload": {
+          "principal.$": "$.principal"
+        }
+      },
+      "ResultPath": "$.identity",
+      "ResultSelector": {
+        "skip_revocation.$": "$.Payload.skip_revocation",
+        "cognito_username.$": "States.JsonToString($.Payload)"
+      },
+      "Next": "RouteByPrincipalType"
+    },
+    "RouteByPrincipalType": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.identity.skip_revocation",
+          "BooleanEquals": true,
+          "Next": "QuarantineOnly"
+        }
+      ],
+      "Default": "FullResponse"
+    },
+    "FullResponse": {
+      "Type": "Parallel",
+      "Next": "NotifyComplete",
+      "ResultPath": "$.response_results",
+      "Branches": [
+        {
+          "StartAt": "RevokeCognitoSession",
+          "States": {
+            "RevokeCognitoSession": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:adminUserGlobalSignOut",
+              "Parameters": {
+                "UserPoolId": "${CognitoUserPoolId}",
+                "Username.$": "$.principal"
+              },
+              "ResultPath": "$.revoke_result",
+              "Next": "EmitSessionRevoked"
+            },
+            "EmitSessionRevoked": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${SignalBusArn}",
+                    "Source": "prahari.automated-response",
+                    "DetailType": "SessionRevoked",
+                    "Detail": {
+                      "principal.$": "$.principal",
+                      "score.$":     "$.score",
+                      "triggered_rules.$": "$.triggered_rules"
+                    }
+                  }
+                ]
+              },
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "AttachDenyPolicy",
+          "States": {
+            "AttachDenyPolicy": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:iam:attachRolePolicy",
+              "Parameters": {
+                "RoleName.$": "States.ArrayGetItem(States.StringSplit($.principal, '/'), 1)",
+                "PolicyArn":  "arn:aws:iam::aws:policy/AWSDenyAll"
+              },
+              "ResultPath": "$.attach_result",
+              "Next": "TagRoleQuarantined"
+            },
+            "TagRoleQuarantined": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:iam:tagRole",
+              "Parameters": {
+                "RoleName.$": "States.ArrayGetItem(States.StringSplit($.principal, '/'), 1)",
+                "Tags": [
+                  {
+                    "Key":   "prahari:quarantined",
+                    "Value": "true"
+                  },
+                  {
+                    "Key":   "prahari:quarantined-at",
+                    "Value.$": "$$.Execution.StartTime"
+                  }
+                ]
+              },
+              "ResultPath": "$.tag_result",
+              "Next": "EmitRoleQuarantined"
+            },
+            "EmitRoleQuarantined": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${SignalBusArn}",
+                    "Source": "prahari.automated-response",
+                    "DetailType": "RoleQuarantined",
+                    "Detail": {
+                      "principal.$": "$.principal",
+                      "score.$":     "$.score",
+                      "triggered_rules.$": "$.triggered_rules"
+                    }
+                  }
+                ]
+              },
+              "End": true
+            }
+          }
+        }
+      ]
+    },
+    "QuarantineOnly": {
+      "Type": "Parallel",
+      "Next": "NotifyComplete",
+      "ResultPath": "$.response_results",
+      "Branches": [
+        {
+          "StartAt": "AttachDenyPolicyOnly",
+          "States": {
+            "AttachDenyPolicyOnly": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:iam:attachRolePolicy",
+              "Parameters": {
+                "RoleName.$": "States.ArrayGetItem(States.StringSplit($.principal, '/'), 1)",
+                "PolicyArn":  "arn:aws:iam::aws:policy/AWSDenyAll"
+              },
+              "ResultPath": "$.attach_result",
+              "Next": "TagRoleOnly"
+            },
+            "TagRoleOnly": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:iam:tagRole",
+              "Parameters": {
+                "RoleName.$": "States.ArrayGetItem(States.StringSplit($.principal, '/'), 1)",
+                "Tags": [
+                  {
+                    "Key":   "prahari:quarantined",
+                    "Value": "true"
+                  },
+                  {
+                    "Key":   "prahari:quarantined-at",
+                    "Value.$": "$$.Execution.StartTime"
+                  }
+                ]
+              },
+              "ResultPath": "$.tag_result",
+              "Next": "EmitQuarantineOnly"
+            },
+            "EmitQuarantineOnly": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${SignalBusArn}",
+                    "Source": "prahari.automated-response",
+                    "DetailType": "RoleQuarantined",
+                    "Detail": {
+                      "principal.$": "$.principal",
+                      "score.$":     "$.score",
+                      "note": "Session revocation skipped — no Cognito identity found"
+                    }
+                  }
+                ]
+              },
+              "End": true
+            }
+          }
+        }
+      ]
+    },
+    "NotifyComplete": {
+      "Type": "Pass",
+      "End": true
+    }
+  }
+}

@@ -45,6 +45,16 @@ module "ztna_broker" {
   risk_score_threshold   = 50
 }
 
+module "automated_response" {
+  source = "../../modules/automated-response"
+
+  cognito_user_pool_id    = module.ztna_broker.cognito_user_pool_id
+  cognito_user_pool_arn   = module.ztna_broker.cognito_user_pool_arn
+  signal_bus_arn          = module.signal_bus.signal_bus_arn
+  trust_scores_table_name = module.ztna_broker.trust_scores_table_name
+  trust_scores_table_arn  = module.ztna_broker.trust_scores_table_arn
+}
+
 # ----------------------------------------
 # Outputs
 # ----------------------------------------
@@ -81,4 +91,9 @@ output "cognito_client_id" {
 output "trust_scores_table_name" {
   value       = module.ztna_broker.trust_scores_table_name
   description = "DynamoDB table for principal trust scores"
+}
+
+output "response_state_machine_arn" {
+  value       = module.automated_response.response_state_machine_arn
+  description = "ARN of the automated response Step Functions state machine"
 }
