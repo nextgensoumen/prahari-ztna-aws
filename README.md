@@ -50,50 +50,110 @@ The platform is completely serverless and modularized into 7 core Terraform comp
 
 ---
 
-## 🚀 Quick Start & Local Development
+## 🚀 Comprehensive Deployment Guide
 
-### 1. Mock Mode (Frontend Only)
-You can run the Premium Dashboard locally without deploying any AWS infrastructure using the built-in Developer Mode.
+Prahari is designed to be deployed into a dedicated AWS Security/Audit account. It requires no manual console clicks—everything is codified in Terraform.
+
+### Prerequisites
+1. **AWS CLI** (v2) configured with an IAM User or Role that has `AdministratorAccess`. *(Do not deploy as the Root User)*.
+2. **Terraform** (v1.5.0 or higher).
+3. **Node.js** (v18+) for building the React frontend.
+4. A registered **Domain Name** (hosted in Route53 or elsewhere) for CloudFront and AWS Verified Access.
+
+### Phase 1: Infrastructure Deployment
+The backend infrastructure is completely serverless. Terraform will deploy EventBridge, Step Functions, DynamoDB, API Gateway, WAFv2, and Cognito.
+
+```bash
+# 1. Navigate to the development environment
+cd infra/envs/dev
+
+# 2. Configure your environment variables
+cp terraform.tfvars.example terraform.tfvars
+
+# Edit terraform.tfvars with your specific details:
+# aws_region       = "us-east-1"
+# aws_account_id   = "123456789012"
+# root_domain      = "security.yourcompany.com"
+# admin_email      = "secops@yourcompany.com"
+
+# 3. Initialize and Apply
+terraform init
+terraform plan
+terraform apply
+```
+*Note: Terraform will output three critical values at the end: `api_url`, `cognito_user_pool_id`, and `cognito_client_id`. Save these for Phase 2.*
+
+### Phase 2: Frontend Deployment
+The React dashboard is hosted as a static site on Amazon S3 and distributed globally via CloudFront.
+
+```bash
+# 1. Navigate to the dashboard directory
+cd ../../../dashboard
+
+# 2. Configure environment variables
+cp .env.example .env.local
+
+# Edit .env.local using the Terraform outputs from Phase 1:
+# VITE_AWS_REGION=us-east-1
+# VITE_COGNITO_USER_POOL_ID=<from_terraform>
+# VITE_COGNITO_CLIENT_ID=<from_terraform>
+# VITE_API_URL=<from_terraform>
+
+# 3. Build for Production
+npm install
+npm run build
+
+# 4. Deploy to S3 (replace with your actual bucket name)
+aws s3 sync dist/ s3://prahari-dashboard-dev-hosting --delete
+
+# 5. Invalidate CloudFront Cache
+aws cloudfront create-invalidation --distribution-id <YOUR_DIST_ID> --paths "/*"
+```
+
+---
+
+## 📖 User Manual & Operations
+
+Prahari operates autonomously, but Security Operations (SecOps) teams interact with the platform through the dashboard and AWS console.
+
+### 1. Navigating the Dashboard
+The platform uses **Amazon Cognito Groups** to determine what users can see:
+* **SecOps Admins (Group: `prahari-admins`)**: Can view the global telemetry feed, see all active sessions across the organization, review the automated supply chain pipeline, and manually trigger session revocations.
+* **Standard Users**: Can only view their own personalized "Security Status" page. This page shows their current Trust Score, explains why their score is at that level (e.g., "You logged in without MFA"), and lists which internal tools are currently blocked or allowed by AWS Verified Access based on that score.
+
+### 2. How the Trust Score Works
+Every AWS principal (IAM User or Role) starts with a Trust Score of **0** (Fully Trusted).
+* **Telemetry Ingestion**: When GuardDuty detects an anomaly (e.g., unusual login region) or Security Hub flags a violation, EventBridge routes that event to Prahari's Risk Engine.
+* **Score Increase**: The Risk Engine normalizes the event and adds points to the principal's score. (e.g., GuardDuty High = +40 pts).
+* **Score Decay**: To prevent scores from remaining artificially high forever, Prahari implements an autonomous decay algorithm. If a principal generates no new security alerts, their score decays at a rate of **-5 points per hour**.
+* **Thresholds**: 
+  * `0-30`: Trusted (Green)
+  * `31-49`: Moderate Risk (Yellow)
+  * `50+`: High Risk (Red) - Automatically quarantined.
+
+### 3. Incident Response (Automated Quarantine)
+When a principal's score hits **50**, Prahari's AWS Step Functions immediately execute a quarantine sequence:
+1. Revokes all active AWS console/CLI sessions (Global Sign-Out).
+2. Attaches an explicit `DenyAll` IAM policy to the user/role.
+3. Signals AWS Verified Access to instantly terminate the user's connection to all internal corporate applications.
+4. Generates an alert in the SecOps PagerDuty/Slack channel.
+
+### 4. The Least Privilege Autopilot
+Prahari doesn't just react to threats; it actively shrinks attack surfaces. 
+Every week, an automated workflow analyzes CloudTrail logs using AWS IAM Access Analyzer. It compares what permissions an IAM role *has* versus what it actually *used*. It then automatically generates a GitHub Pull Request proposing a new, tightened Terraform IAM policy, dropping unused permissions.
+
+---
+
+## 🧪 Local Testing (Developer Mode)
+
+You can run the React frontend locally without deploying the AWS backend to preview the UI.
 
 ```bash
 cd dashboard
 npm install
 npm run dev
 ```
-Navigate to `http://localhost:5173`. Click the **Developer Mode** mock login buttons at the bottom of the screen to simulate either an Admin or User experience.
-
-### 2. Full AWS Deployment
-
-**Prerequisites:** AWS CLI, Terraform (v1.5+), Node.js, and an IAM User with `AdministratorAccess` (Do not use Root).
-
-```bash
-# 1. Configure variables
-cd infra/envs/dev
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your Account ID, Region, and Domain
-
-# 2. Deploy Backend
-terraform init
-terraform apply
-
-# 3. Configure Frontend
-cd ../../../dashboard
-cp .env.example .env.local
-# Inject the Terraform outputs (API URL, Cognito IDs) into .env.local
-npm run build
-```
-
----
-
-## 🧪 Testing & Validation
-
-The core Risk Engine and Signal Normalizers are heavily tested to ensure mathematical correctness of the trust model.
-To run the test suite:
-
-```bash
-pip install pytest boto3
-python -m pytest tests/services/ -v
-```
+Navigate to `http://localhost:5173`. Instead of logging in with real credentials, click the **"Simulate Admin Login"** or **"Simulate User Login"** buttons at the bottom of the screen to preview the respective dashboard experiences using mock data.
 
 ---
 
