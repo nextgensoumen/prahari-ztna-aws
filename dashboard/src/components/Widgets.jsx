@@ -122,3 +122,93 @@ export function PipelineRow({ build }) {
     </tr>
   )
 }
+
+// ─── SOC Extensions ───────────────────────────────────────────
+
+export function SocActionBar() {
+  return (
+    <div className="soc-action-bar animate-slide-up">
+      <div className="flex items-center gap-4">
+        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ShieldAlert size={20} color="var(--critical)" />
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>SOC Quick Actions</div>
+          <div className="text-muted" style={{ fontSize: 13 }}>Emergency response and platform control</div>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <button className="btn btn-ghost ripple" onClick={() => alert('Initiating log export to S3 bucket...')}>
+          Export Audit Logs
+        </button>
+        <button className="btn btn-ghost ripple" onClick={() => alert('Syncing latest Cedar policies...')}>
+          Force Policy Sync
+        </button>
+        <button className="btn btn-danger ripple" onClick={() => {
+          if (confirm('CRITICAL ACTION: This will immediately revoke sessions for ALL principals with a score >= 50. Proceed?')) {
+            alert('Global quarantine triggered.')
+          }
+        }}>
+          Quarantine All High-Risk
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function MitreBreakdown({ findings }) {
+  // Mock grouping for demonstration
+  const tactics = [
+    { name: 'Initial Access', count: findings.filter(f => f.title.includes('Login') || f.title.includes('IAM')).length || 2, color: '#f87171' },
+    { name: 'Privilege Escalation', count: findings.filter(f => f.title.includes('Privilege')).length || 1, color: '#fbbf24' },
+    { name: 'Defense Evasion', count: findings.filter(f => f.title.includes('Trail') || f.title.includes('Log')).length || 3, color: '#a78bfa' },
+    { name: 'Credential Access', count: 0, color: '#63b3ed' },
+  ]
+  const total = tactics.reduce((sum, t) => sum + t.count, 0) || 1
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {tactics.map(t => (
+        <div key={t.name} className="soc-tactic-row">
+          <div className="flex items-center gap-3">
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: t.color }} />
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t.name}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div style={{ width: 100, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ width: `${(t.count / total) * 100}%`, height: '100%', background: t.color, transition: 'width 1s' }} />
+            </div>
+            <span style={{ fontSize: 13, width: 24, textAlign: 'right', fontWeight: 600 }}>{t.count}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function SystemHealth() {
+  return (
+    <div className="soc-health-grid">
+      <div className="soc-health-item">
+        <div className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Event Latency</div>
+        <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>42ms</div>
+        <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>P99 Ingestion</div>
+      </div>
+      <div className="soc-health-item">
+        <div className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>DLQ Depth</div>
+        <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>0</div>
+        <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>Dead letter events</div>
+      </div>
+      <div className="soc-health-item">
+        <div className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cedar Policies</div>
+        <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>14</div>
+        <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>Active Rules</div>
+      </div>
+      <div className="soc-health-item">
+        <div className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Events (24h)</div>
+        <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4, color: 'var(--accent)' }}>12.4k</div>
+        <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>Processed</div>
+      </div>
+    </div>
+  )
+}

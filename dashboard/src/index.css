@@ -624,12 +624,14 @@ button { cursor: pointer; font-family: var(--font); }
 .content-grid.single { grid-template-columns: 1fr; }
 .content-grid.thirds { grid-template-columns: 1fr 1fr 1fr; }
 
-/* ─── Loading states (Shimmer) ──────────────────────────────── */
+/* ─── Loading states ──────────────────────────────────────── */
 .shimmer-bg {
-  animation: shimmer 2s infinite linear;
-  background: linear-gradient(90deg, var(--bg-surface) 40%, var(--bg-elevated) 50%, var(--bg-surface) 60%);
-  background-size: 200% 100%;
+  background: linear-gradient(90deg, var(--bg-surface) 25%, rgba(255,255,255,0.02) 50%, var(--bg-surface) 75%);
+  background-size: 400% 100%;
+  animation: shimmer 1.5s infinite;
 }
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
 .empty-state {
   text-align: center;
   padding: 64px 24px;
@@ -638,6 +640,46 @@ button { cursor: pointer; font-family: var(--font); }
   background: rgba(255,255,255,0.02);
   border-radius: var(--radius-lg);
   border: 1px dashed var(--border);
+}
+
+/* ─── SOC Additions ──────────────────────────────────────────── */
+.soc-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.05), rgba(10, 12, 18, 0.9) 30%);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--critical);
+  border-radius: var(--radius-md);
+  margin-bottom: 24px;
+}
+.soc-tactic-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  transition: all 0.2s;
+}
+.soc-tactic-row:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--accent-dim);
+}
+.soc-health-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.soc-health-item {
+  padding: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: center;
 }
 
 /* ─── Misc utils ─────────────────────────────────────────────── */

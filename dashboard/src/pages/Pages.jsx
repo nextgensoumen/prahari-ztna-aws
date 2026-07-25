@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../lib/auth'
-import { TrustScoreGauge, FindingCard, SessionRow, PipelineRow } from '../components/Widgets'
+import { TrustScoreGauge, FindingCard, SessionRow, PipelineRow, SocActionBar, MitreBreakdown, SystemHealth } from '../components/Widgets'
 import { Shield, ShieldAlert, Users, Activity, FileText, CheckCircle, Package } from 'lucide-react'
 
 function StatTile({ label, value, sub, variant, icon: Icon, delay }) {
@@ -58,50 +58,65 @@ export function AdminDashboard() {
     <>
       <div className="page-header animate-slide-up">
         <div>
-          <h1 className="page-title">Security Overview</h1>
-          <p className="page-subtitle">Real-time view of Prahari platform telemetry</p>
+          <h1 className="page-title">Security Operations Center</h1>
+          <p className="page-subtitle">Global ZTNA Telemetry & Threat Landscape</p>
         </div>
         <DateFilter />
       </div>
 
-      <div className="stat-grid">
-        <StatTile label="Critical Findings" value={critical} sub="Last 50 events" variant="critical" icon={ShieldAlert} delay="delay-100" />
-        <StatTile label="High Findings"     value={high}     sub="Last 50 events" variant="high" icon={Activity} delay="delay-200" />
-        <StatTile label="Active Sessions"   value={sessions.length} sub="All principals" variant="accent" icon={Users} delay="delay-300" />
-        <StatTile label="High-Risk Sessions" value={highRisk} sub="Score ≥ threshold" variant={highRisk > 0 ? 'critical' : 'ok'} icon={Shield} delay="delay-400" />
+      <SocActionBar />
+
+      <div className="stat-grid" style={{ marginBottom: 24 }}>
+        <StatTile label="Critical Findings" value={critical} sub="Active threats" variant="critical" icon={ShieldAlert} delay="delay-100" />
+        <StatTile label="High Risk Sessions" value={highRisk} sub="Score ≥ 50" variant={highRisk > 0 ? 'critical' : 'ok'} icon={Shield} delay="delay-200" />
+        <div className="card animate-slide-up delay-300" style={{ gridColumn: 'span 2', padding: 0 }}>
+          <SystemHealth />
+        </div>
       </div>
 
-      <div className="content-grid">
-        <div className="card animate-slide-up delay-100">
-          <div className="card-header">
-            <span className="card-title"><Activity size={18} /> Recent Findings</span>
-            <a href="/findings" className="btn btn-ghost btn-sm ripple">View all →</a>
+      <div className="content-grid" style={{ gridTemplateColumns: '1fr 340px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div className="card animate-slide-up delay-100">
+            <div className="card-header">
+              <span className="card-title"><Users size={18} /> High-Risk Sessions & Quarantines</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead><tr>
+                  <th>Principal</th><th>Score</th><th>Status</th><th>Updated</th><th>Action</th>
+                </tr></thead>
+                <tbody>
+                  {sessions.slice(0, 8).map(s => (
+                    <SessionRow key={s.principal} session={s} isAdmin={true}
+                      onRevoke={(p) => apiPost('/sessions/revoke', { principal: p }).then(() => alert('Revocation triggered'))} />
+                  ))}
+                </tbody>
+              </table>
+              {sessions.length === 0 && <div className="empty-state"><Users size={48} style={{margin:'0 auto 16px', opacity:0.5}}/>No sessions</div>}
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {findings.slice(0, 5).map(f => (
-              <FindingCard key={f.event_id} finding={f} />
-            ))}
-            {findings.length === 0 && <div className="empty-state"><Shield size={48} style={{margin:'0 auto 16px', opacity:0.5}}/>No findings yet</div>}
+
+          <div className="card animate-slide-up delay-200">
+            <div className="card-header">
+              <span className="card-title"><Activity size={18} /> Incident Timeline (Recent Findings)</span>
+              <a href="/findings" className="btn btn-ghost btn-sm ripple">View all →</a>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {findings.slice(0, 5).map(f => (
+                <FindingCard key={f.event_id} finding={f} />
+              ))}
+              {findings.length === 0 && <div className="empty-state"><Shield size={48} style={{margin:'0 auto 16px', opacity:0.5}}/>No findings yet</div>}
+            </div>
           </div>
         </div>
 
-        <div className="card animate-slide-up delay-200">
-          <div className="card-header">
-            <span className="card-title"><Users size={18} /> Sessions</span>
+        <div className="card animate-slide-up delay-300" style={{ alignSelf: 'start' }}>
+          <div className="card-header" style={{ marginBottom: 16 }}>
+            <span className="card-title"><ShieldAlert size={18} /> MITRE ATT&CK Landscape</span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead><tr>
-                <th>Principal</th><th>Score</th><th>Status</th><th>Updated</th><th>Action</th>
-              </tr></thead>
-              <tbody>
-                {sessions.slice(0, 8).map(s => (
-                  <SessionRow key={s.principal} session={s} isAdmin={true}
-                    onRevoke={(p) => apiPost('/sessions/revoke', { principal: p }).then(() => alert('Revocation triggered'))} />
-                ))}
-              </tbody>
-            </table>
-            {sessions.length === 0 && <div className="empty-state"><Users size={48} style={{margin:'0 auto 16px', opacity:0.5}}/>No sessions</div>}
+          <MitreBreakdown findings={findings} />
+          <div className="text-muted" style={{ fontSize: 12, marginTop: 16, lineHeight: 1.5 }}>
+            Displays the distribution of tactics observed across all active findings in the current 24H window.
           </div>
         </div>
       </div>
