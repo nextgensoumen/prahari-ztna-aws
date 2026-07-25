@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../lib/auth'
-import { TrustScoreGauge, FindingCard, SessionRow, PipelineRow, SocActionBar, MitreBreakdown, SystemHealth } from '../components/Widgets'
-import { Shield, ShieldAlert, Users, Activity, FileText, CheckCircle, Package } from 'lucide-react'
+import {
+  TrustScoreGauge, FindingCard, SessionRow, PipelineRow,
+  SocActionBar, SocThreatBar, RiskLeaderboard, SignalSourceBreakdown,
+  MitreAttackMap, RuleHitCounter, SystemHealth
+} from '../components/Widgets'
+import { Shield, ShieldAlert, Users, Activity, FileText, CheckCircle, Package, Target, Zap, Radio } from 'lucide-react'
 
 function StatTile({ label, value, sub, variant, icon: Icon, delay }) {
   return (
@@ -39,7 +43,7 @@ function SkeletonLoader() {
 export function AdminDashboard() {
   const [findings, setFindings] = useState([])
   const [sessions, setSessions] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]   = useState(true)
 
   useEffect(() => {
     Promise.all([apiGet('/findings'), apiGet('/sessions')])
@@ -48,77 +52,110 @@ export function AdminDashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  const critical = findings.filter(f => f.severity === 'critical').length
-  const high     = findings.filter(f => f.severity === 'high').length
-  const highRisk = sessions.filter(s => s.is_high_risk).length
+  const handleRevoke = (principal) =>
+    apiPost('/sessions/revoke', { principal })
+      .then(() => alert(`Revocation triggered for ${principal}`))
+      .catch(e => alert(`Failed: ${e.message}`))
+
+  const handleGlobalQuarantine = () =>
+    sessions
+      .filter(s => s.is_high_risk)
+      .forEach(s => handleRevoke(s.principal))
 
   if (loading) return <SkeletonLoader />
 
   return (
     <>
+      {/* ─── Page Header ───────────────────────────────────── */}
       <div className="page-header animate-slide-up">
         <div>
           <h1 className="page-title">Security Operations Center</h1>
-          <p className="page-subtitle">Global ZTNA Telemetry & Threat Landscape</p>
+          <p className="page-subtitle">Global ZTNA telemetry · MITRE ATT&CK analytics · Real-time quarantine</p>
         </div>
         <DateFilter />
       </div>
 
-      <SocActionBar />
+      {/* ─── 1. Threat Level Bar ──────────────────────────── */}
+      <SocThreatBar findings={findings} sessions={sessions} />
 
-      <div className="stat-grid" style={{ marginBottom: 24 }}>
-        <StatTile label="Critical Findings" value={critical} sub="Active threats" variant="critical" icon={ShieldAlert} delay="delay-100" />
-        <StatTile label="High Risk Sessions" value={highRisk} sub="Score ≥ 50" variant={highRisk > 0 ? 'critical' : 'ok'} icon={Shield} delay="delay-200" />
-        <div className="card animate-slide-up delay-300" style={{ gridColumn: 'span 2', padding: 0 }}>
-          <SystemHealth />
+      {/* ─── 2. SOC Quick Actions ─────────────────────────── */}
+      <SocActionBar onGlobalQuarantine={handleGlobalQuarantine} />
+
+      {/* ─── 3. System Health Row ─────────────────────────── */}
+      <div className="card animate-slide-up delay-100" style={{ padding: 0, marginBottom: 24 }}>
+        <div className="card-header" style={{ padding: '16px 24px 0' }}>
+          <span className="card-title"><Zap size={16} /> Platform Telemetry & Health</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Live metrics from all ZTNA services</span>
+        </div>
+        <SystemHealth />
+      </div>
+
+      {/* ─── 4. Main 3-Column SOC Grid ────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24, marginBottom: 24 }}>
+
+        {/* Left Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* Incident Timeline */}
+          <div className="card animate-slide-up delay-100">
+            <div className="card-header" style={{ marginBottom: 16 }}>
+              <span className="card-title"><Activity size={18} /> Incident Timeline</span>
+              <a href="/findings" className="btn btn-ghost btn-sm ripple">View full feed →</a>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {findings.slice(0, 5).map(f => <FindingCard key={f.event_id} finding={f} />)}
+              {findings.length === 0 && <div className="empty-state"><Shield size={40} style={{margin:'0 auto 12px',opacity:0.4}}/>No incidents detected</div>}
+            </div>
+          </div>
+
+          {/* Principal Risk Leaderboard */}
+          <div className="card animate-slide-up delay-200">
+            <div className="card-header" style={{ marginBottom: 16 }}>
+              <span className="card-title"><Users size={18} /> Principal Risk Leaderboard</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ranked by current trust score</span>
+            </div>
+            <RiskLeaderboard sessions={sessions} onRevoke={handleRevoke} />
+          </div>
+
+        </div>
+
+        {/* Right Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* MITRE ATT&CK Map */}
+          <div className="card animate-slide-up delay-100">
+            <div className="card-header" style={{ marginBottom: 16 }}>
+              <span className="card-title"><Target size={16} /> MITRE ATT&CK Map</span>
+            </div>
+            <MitreAttackMap findings={findings} />
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, lineHeight: 1.5 }}>
+              Tactic mapping derived from the 8 rules in the Risk Engine. 0 = no active signals.
+            </div>
+          </div>
+
+          {/* Signal Source Breakdown */}
+          <div className="card animate-slide-up delay-200">
+            <div className="card-header" style={{ marginBottom: 16 }}>
+              <span className="card-title"><Radio size={16} /> Signal Sources</span>
+            </div>
+            <SignalSourceBreakdown findings={findings} />
+          </div>
+
         </div>
       </div>
 
-      <div className="content-grid" style={{ gridTemplateColumns: '1fr 340px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <div className="card animate-slide-up delay-100">
-            <div className="card-header">
-              <span className="card-title"><Users size={18} /> High-Risk Sessions & Quarantines</span>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="data-table">
-                <thead><tr>
-                  <th>Principal</th><th>Score</th><th>Status</th><th>Updated</th><th>Action</th>
-                </tr></thead>
-                <tbody>
-                  {sessions.slice(0, 8).map(s => (
-                    <SessionRow key={s.principal} session={s} isAdmin={true}
-                      onRevoke={(p) => apiPost('/sessions/revoke', { principal: p }).then(() => alert('Revocation triggered'))} />
-                  ))}
-                </tbody>
-              </table>
-              {sessions.length === 0 && <div className="empty-state"><Users size={48} style={{margin:'0 auto 16px', opacity:0.5}}/>No sessions</div>}
-            </div>
-          </div>
-
-          <div className="card animate-slide-up delay-200">
-            <div className="card-header">
-              <span className="card-title"><Activity size={18} /> Incident Timeline (Recent Findings)</span>
-              <a href="/findings" className="btn btn-ghost btn-sm ripple">View all →</a>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {findings.slice(0, 5).map(f => (
-                <FindingCard key={f.event_id} finding={f} />
-              ))}
-              {findings.length === 0 && <div className="empty-state"><Shield size={48} style={{margin:'0 auto 16px', opacity:0.5}}/>No findings yet</div>}
-            </div>
-          </div>
+      {/* ─── 5. Rule Hit Counter (full-width) ─────────────── */}
+      <div className="card animate-slide-up delay-300">
+        <div className="card-header" style={{ marginBottom: 16 }}>
+          <span className="card-title"><ShieldAlert size={18} /> Risk Engine Rule Activations</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Shows which scoring rules fired in this window</span>
         </div>
-
-        <div className="card animate-slide-up delay-300" style={{ alignSelf: 'start' }}>
-          <div className="card-header" style={{ marginBottom: 16 }}>
-            <span className="card-title"><ShieldAlert size={18} /> MITRE ATT&CK Landscape</span>
-          </div>
-          <MitreBreakdown findings={findings} />
-          <div className="text-muted" style={{ fontSize: 12, marginTop: 16, lineHeight: 1.5 }}>
-            Displays the distribution of tactics observed across all active findings in the current 24H window.
-          </div>
-        </div>
+        {findings.length === 0
+          ? <div className="empty-state"><CheckCircle size={40} style={{margin:'0 auto 12px'}} color="#4ade80" />All rules clear — no threat signals detected</div>
+          : <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <RuleHitCounter findings={findings} />
+            </div>
+        }
       </div>
     </>
   )
