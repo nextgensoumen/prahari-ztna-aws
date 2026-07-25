@@ -22,7 +22,12 @@ export default function Sidebar({ user }) {
 
   function handleLogout(e) {
     e.preventDefault()
-    logout()
+    if (sessionStorage.getItem('mock_user')) {
+      sessionStorage.clear()
+      window.location.reload()
+    } else {
+      logout()
+    }
   }
 
   return (
