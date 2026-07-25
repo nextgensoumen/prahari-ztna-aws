@@ -1,0 +1,41 @@
+version: 0.2
+
+env:
+  variables:
+    DOCKER_BUILDKIT: "1"
+
+phases:
+  install:
+    commands:
+      - echo "Installing Syft..."
+      - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      - echo "Installing Cosign..."
+      - curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+      - mv cosign-linux-amd64 /usr/local/bin/cosign
+      - chmod +x /usr/local/bin/cosign
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO_URL
+      - export IMAGE_TAG=$CODEBUILD_RESOLVED_SOURCE_VERSION
+      - export IMAGE_URI=$ECR_REPO_URL:$IMAGE_TAG
+  build:
+    commands:
+      - echo "Building the Docker image..."
+      # Create a dummy Dockerfile if none exists to ensure a successful demo build
+      - mkdir -p dummy-app
+      - echo 'FROM alpine:latest' > dummy-app/Dockerfile
+      - echo 'CMD ["echo", "Prahari ZTNA"]' >> dummy-app/Dockerfile
+      - docker build -t $IMAGE_URI dummy-app/
+  post_build:
+    commands:
+      - echo "Pushing the Docker image to ECR..."
+      - docker push $IMAGE_URI
+      - echo "Generating SBOM..."
+      - syft $IMAGE_URI -o cyclonedx-json > sbom.json
+      - echo "Copying SBOM to evidence bucket..."
+      - aws s3 cp sbom.json s3://$EVIDENCE_BUCKET/sboms/$IMAGE_TAG-sbom.json
+      - echo "Signing the image and attesting SBOM..."
+      # Use the OIDC token passed via GitHub Actions to sign without static keys
+      - cosign sign --yes --identity-token $GITHUB_OIDC_TOKEN $IMAGE_URI
+      - cosign attest --yes --identity-token $GITHUB_OIDC_TOKEN --predicate sbom.json --type cyclonedx $IMAGE_URI

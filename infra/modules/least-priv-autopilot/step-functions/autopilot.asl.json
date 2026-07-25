@@ -1,0 +1,64 @@
+{
+  "Comment": "Least Privilege Autopilot: Generates IAM policies based on CloudTrail and proposes via PR",
+  "StartAt": "StartPolicyGeneration",
+  "States": {
+    "StartPolicyGeneration": {
+      "Type": "Task",
+      "Next": "WaitForGeneration",
+      "Parameters": {
+        "PolicyGenerationDetails": {
+          "PrincipalArn.$": "$.principalArn"
+        }
+      },
+      "Resource": "arn:aws:states:::aws-sdk:accessanalyzer:startPolicyGeneration",
+      "ResultPath": "$.generationResult"
+    },
+    "WaitForGeneration": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "GetGeneratedPolicy"
+    },
+    "GetGeneratedPolicy": {
+      "Type": "Task",
+      "Next": "CheckStatus",
+      "Parameters": {
+        "JobId.$": "$.generationResult.JobId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:accessanalyzer:getGeneratedPolicy",
+      "ResultPath": "$.policyResult"
+    },
+    "CheckStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.policyResult.JobDetails.Status",
+          "StringEquals": "IN_PROGRESS",
+          "Next": "WaitForGeneration"
+        },
+        {
+          "Variable": "$.policyResult.JobDetails.Status",
+          "StringEquals": "SUCCEEDED",
+          "Next": "InvokeDiffBot"
+        }
+      ],
+      "Default": "FailState"
+    },
+    "InvokeDiffBot": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${DiffBotFunctionName}",
+        "Payload": {
+          "principalArn.$": "$.principalArn",
+          "policyResult.$": "$.policyResult"
+        }
+      },
+      "End": true
+    },
+    "FailState": {
+      "Type": "Fail",
+      "Error": "PolicyGenerationFailed",
+      "Cause": "Access Analyzer failed to generate policy"
+    }
+  }
+}

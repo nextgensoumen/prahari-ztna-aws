@@ -1,0 +1,78 @@
+name: Supply Chain Gate
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # The role ARN is outputted by the supply-chain Terraform module.
+          # Add this as a repository secret in GitHub.
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get GitHub OIDC Token for Sigstore
+        id: get-token
+        run: |
+          TOKEN_JSON=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}")
+          OIDC_TOKEN=$(echo $TOKEN_JSON | jq -r '.value')
+          echo "::add-mask::$OIDC_TOKEN"
+          echo "token=$OIDC_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Start CodeBuild and wait
+        id: codebuild
+        run: |
+          BUILD_ID=$(aws codebuild start-build \
+            --project-name prahari-supply-chain-build \
+            --source-version ${{ github.sha }} \
+            --environment-variables-override name=GITHUB_OIDC_TOKEN,value=${{ steps.get-token.outputs.token }},type=PLAINTEXT \
+            --query 'build.id' \
+            --output text)
+          echo "Started build $BUILD_ID"
+          
+          # Wait for build to complete
+          STATUS="IN_PROGRESS"
+          while [ "$STATUS" = "IN_PROGRESS" ]; do
+            sleep 15
+            STATUS=$(aws codebuild batch-get-builds --ids $BUILD_ID --query 'builds[0].buildStatus' --output text)
+            echo "Build status: $STATUS"
+          done
+          
+          if [ "$STATUS" != "SUCCEEDED" ]; then
+            echo "CodeBuild failed with status $STATUS"
+            exit 1
+          fi
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+        
+      - name: Verify Image Signature
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REPO="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/prahari-repo"
+          IMAGE_URI="${ECR_REPO}:${{ github.sha }}"
+          
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REPO
+          
+          echo "Verifying image signature..."
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/nextgensoumen/prahari-ztna-aws/.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            $IMAGE_URI
