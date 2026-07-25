@@ -11,7 +11,7 @@ locals {
 resource "aws_cognito_user_pool" "main" {
   name = "${local.name_prefix}-users"
 
-  mfa_configuration = "OPTIONAL"
+  mfa_configuration = "ON"
 
   software_token_mfa_configuration {
     enabled = true

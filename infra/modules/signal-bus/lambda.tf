@@ -43,6 +43,13 @@ data "aws_iam_policy_document" "normalizer_policy" {
     ]
     resources = [aws_kms_key.main.arn]
   }
+
+  statement {
+    sid    = "SQSDlq"
+    effect = "Allow"
+    actions = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.normalizer_dlq.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "normalizer_policy" {
@@ -71,6 +78,30 @@ resource "aws_lambda_function" "normalizer" {
     variables = {
       TABLE_NAME = aws_dynamodb_table.events.name
     }
+  }
+
+  dead_letter_config {
+    target_arn = aws_sqs_queue.normalizer_dlq.arn
+  }
+}
+
+resource "aws_sqs_queue" "normalizer_dlq" {
+  name = "${local.name_prefix}-normalizer-dlq"
+  kms_master_key_id = aws_kms_key.main.arn
+}
+
+resource "aws_cloudwatch_metric_alarm" "normalizer_dlq_alarm" {
+  alarm_name          = "${local.name_prefix}-normalizer-dlq-not-empty"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Alarm when normalizer DLQ has messages"
+  dimensions = {
+    QueueName = aws_sqs_queue.normalizer_dlq.name
   }
 }
 

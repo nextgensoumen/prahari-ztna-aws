@@ -84,6 +84,13 @@ data "aws_iam_policy_document" "risk_engine_permissions" {
     ]
     resources = [var.signal_bus_arn]
   }
+
+  statement {
+    sid    = "SQSDlq"
+    effect = "Allow"
+    actions = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.risk_engine_dlq.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "risk_engine" {
@@ -115,6 +122,30 @@ resource "aws_lambda_function" "risk_engine" {
       SIGNAL_BUS_NAME   = var.signal_bus_arn
       RISK_THRESHOLD    = tostring(var.risk_score_threshold)
     }
+  }
+
+  dead_letter_config {
+    target_arn = aws_sqs_queue.risk_engine_dlq.arn
+  }
+}
+
+resource "aws_sqs_queue" "risk_engine_dlq" {
+  name = "${local.name_prefix}-risk-engine-dlq"
+  sqs_managed_sse_enabled = true
+}
+
+resource "aws_cloudwatch_metric_alarm" "risk_engine_dlq_alarm" {
+  alarm_name          = "${local.name_prefix}-risk-engine-dlq-not-empty"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Alarm when risk engine DLQ has messages"
+  dimensions = {
+    QueueName = aws_sqs_queue.risk_engine_dlq.name
   }
 }
 
